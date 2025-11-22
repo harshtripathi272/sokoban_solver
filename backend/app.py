@@ -6,54 +6,14 @@ Handles HTTP requests from the React frontend
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from solver import SokobanSolver
+from levels import get_random_level, get_all_levels, get_level_count
 import json
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for React frontend
 
-# Predefined levels
-LEVELS = {
-    'tutorial': [
-        "  ####  ",
-        "  #  ###",
-        "  #$   #",
-        "  # # @#",
-        "###. ###",
-        "#   ##  ",
-        "########"
-    ],
-    'easy': [
-        "#####",
-        "#   #",
-        "#$  #",
-        "# .@#",
-        "#####"
-    ],
-    'medium': [
-        "  ##### ",
-        "###   # ",
-        "#.@$  # ",
-        "### $.# ",
-        "#.##$ # ",
-        "# # . ##",
-        "#$ *$ #",
-        "#   .  #",
-        "########"
-    ],
-    'hard': [
-        "    #####",
-        "    #   #",
-        "    #$  #",
-        "  ###  $##",
-        "  #  $ $ #",
-        "### # ## #",
-        "#   # ## #####",
-        "# $  $          #",
-        "##### ### #@##  #",
-        "    #     #######",
-        "    #######"
-    ]
-}
+# Levels are now loaded from levels.py
+# No need to hardcode them here
 
 
 @app.route('/api/solve', methods=['POST'])
@@ -105,23 +65,33 @@ def get_levels():
     """Get all predefined levels"""
     return jsonify({
         'success': True,
-        'levels': LEVELS
+        'levels': get_all_levels()
     })
 
 
 @app.route('/api/levels/<level_name>', methods=['GET'])
 def get_level(level_name):
-    """Get a specific level"""
-    if level_name not in LEVELS:
+    """Get a random level from the specified difficulty"""
+    try:
+        # Get a random level from the specified difficulty
+        level = get_random_level(level_name)
+        total_levels = get_level_count(level_name)
+        
+        # Get the index of the level we just selected (track from levels module)
+        from levels import _last_level_index
+        level_index = _last_level_index.get(level_name, 0) + 1
+        
+        return jsonify({
+            'success': True,
+            'level': level,
+            'levelIndex': level_index,
+            'totalLevels': total_levels
+        })
+    except Exception as e:
         return jsonify({
             'success': False,
-            'error': f'Level {level_name} not found'
-        }), 404
-    
-    return jsonify({
-        'success': True,
-        'level': LEVELS[level_name]
-    })
+            'error': f'Failed to load level: {str(e)}'
+        }), 500
 
 
 @app.route('/api/validate', methods=['POST'])
@@ -220,7 +190,7 @@ if __name__ == '__main__':
     print("\nEndpoints:")
     print("  POST /api/solve       - Solve a puzzle")
     print("  GET  /api/levels      - Get all levels")
-    print("  GET  /api/levels/<id> - Get specific level")
+    print("  GET  /api/levels/<id> - Get random level from difficulty")
     print("  POST /api/validate    - Validate a map")
     print("  GET  /api/health      - Health check")
     print("\nServer starting on http://localhost:5000")

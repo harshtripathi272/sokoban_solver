@@ -473,6 +473,31 @@ body {
   font-size: 1.5rem;
   animation: bounce 1s infinite;
 }
+/* Add at the end */
+
+.level-btn-random {
+  padding: 1rem;
+  border: none;
+  border-radius: 0.75rem;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.level-btn-random:hover:not(:disabled) {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 16px rgba(102, 126, 234, 0.4);
+}
+
+.level-btn-random:active:not(:disabled) {
+  transform: translateY(-2px);
+}
+
+.level-btn-random:disabled {
+  background: #d1d5db !important;
+  cursor: not-allowed;
+  opacity: 0.6;
+}
 
 /* Responsive Design */
 @media (max-width: 1024px) {

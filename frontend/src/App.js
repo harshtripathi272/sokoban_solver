@@ -2,63 +2,10 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Play, Pause, RotateCcw, SkipForward, Zap, Brain, Layers, Server } from 'lucide-react';
 import './App.css';
 
-const SokobanFrontend = () => {
-  const API_URL = 'http://localhost:5000/api';
-  
-  const levels = [
-    {
-      name: "Tutorial",
-      id: "tutorial",
-      map: [
-        "  ####  ",
-        "  #  ###",
-        "  #$   #",
-        "  # # @#",
-        "###. ###",
-        "#   ##  ",
-        "########"
-      ]
-    },
-    {
-      name: "Easy",
-      id: "easy",
-      map: [
-        "######",
-        "#   #",
-        "# $ @ #",
-        "# .   #",
-        "#######"
-      ]
-    },
-    {
-      name: "Medium",
-      id: "medium",
-      map: [
-        "########",
-        "#      #",
-        "# $$ @ #",
-        "# ..   #",
-        "##      #",
-        "########",
-        
-      ]
-    },
-    {
-      name: "Hard",
-      id: "hard",
-      map: [
-        "#########",
-        "#       #",
-        "# $$$ @ #",
-        "# ...   #",
-        "#       #",
-        "#########",
-        
-      ]
-    }
-  ];
+const API_URL = 'http://localhost:5000/api';
 
-  const [currentLevel, setCurrentLevel] = useState(0);
+const SokobanFrontend = () => {
+  // State Management
   const [gameState, setGameState] = useState(null);
   const [solution, setSolution] = useState(null);
   const [currentStep, setCurrentStep] = useState(0);
@@ -67,117 +14,154 @@ const SokobanFrontend = () => {
   const [solving, setSolving] = useState(false);
   const [stats, setStats] = useState(null);
   const [apiStatus, setApiStatus] = useState('checking');
-  const animationRef = useRef(null);
+  const [currentDifficulty, setCurrentDifficulty] = useState('tutorial');
+  const [currentLevelMap, setCurrentLevelMap] = useState(null);
 
-  useEffect(() => {
-    checkApiHealth();
-    initializeGame(levels[currentLevel].map);
-  }, [currentLevel]);
+  // REMOVE THE HARDCODED LEVELS ARRAY - We'll fetch from backend instead
 
+  // Check API health on mount
   useEffect(() => {
-    if (isPlaying && solution && solution.length > 0 && currentStep < solution.length) {
-      animationRef.current = setTimeout(() => {
-        setCurrentStep(prev => prev + 1);
-      }, 300);
-    } else if (solution && currentStep >= solution.length) {
-      setIsPlaying(false);
-    }
-    return () => {
-      if (animationRef.current) {
-        clearTimeout(animationRef.current);
+    const checkAPI = async () => {
+      try {
+        const response = await fetch(`${API_URL}/health`);
+        if (response.ok) {
+          setApiStatus('connected');
+          // Load initial level after API is connected
+          loadRandomLevel('tutorial');
+        } else {
+          setApiStatus('disconnected');
+        }
+      } catch (error) {
+        setApiStatus('disconnected');
       }
     };
+    checkAPI();
+  }, []);
+
+  // Animation effect
+  useEffect(() => {
+    if (isPlaying && solution && currentStep < solution.length) {
+      const timer = setTimeout(() => {
+        setCurrentStep(prev => prev + 1);
+      }, 500);
+      return () => clearTimeout(timer);
+    } else if (currentStep >= solution?.length) {
+      setIsPlaying(false);
+    }
   }, [isPlaying, currentStep, solution]);
 
-  const checkApiHealth = async () => {
-    try {
-      const response = await fetch(`${API_URL}/health`);
-      if (response.ok) {
-        setApiStatus('connected');
-      } else {
-        setApiStatus('error');
+  // Parse game map
+  const parseMap = (map) => {
+    const state = {
+      player: null,
+      boxes: [],
+      goals: [],
+      walls: [],
+      width: Math.max(...map.map(row => row.length)),
+      height: map.length
+    };
+
+    for (let y = 0; y < map.length; y++) {
+      for (let x = 0; x < map[y].length; x++) {
+        const cell = map[y][x];
+        if (cell === '@' || cell === '+') {
+          state.player = { x, y };
+        }
+        if (cell === '$' || cell === '*') {
+          state.boxes.push({ x, y });
+        }
+        if (cell === '.' || cell === '*' || cell === '+') {
+          state.goals.push({ x, y });
+        }
+        if (cell === '#') {
+          state.walls.push(`${x},${y}`);
+        }
       }
-    } catch (error) {
-      setApiStatus('disconnected');
     }
+
+    return state;
   };
 
+  // Initialize game
   const initializeGame = (map) => {
     const state = parseMap(map);
-    setGameState(state);
+    setGameState([state]);
     setSolution(null);
     setCurrentStep(0);
     setIsPlaying(false);
     setStats(null);
+    setCurrentLevelMap(map);
   };
 
-  const parseMap = (map) => {
-    let player = null;
-    const boxes = [];
-    const goals = [];
-    const walls = new Set();
-    
-    map.forEach((row, y) => {
-      [...row].forEach((cell, x) => {
-        const pos = `${x},${y}`;
-        if (cell === '@' || cell === '+') player = { x, y };
-        if (cell === '$' || cell === '*') boxes.push({ x, y, id: boxes.length });
-        if (cell === '.' || cell === '*' || cell === '+') goals.push({ x, y });
-        if (cell === '#') walls.add(pos);
-      });
-    });
-    
-    return { player, boxes, goals, walls, width: map[0].length, height: map.length, map };
-  };
+  // Load random level from backend
+  // Update the loadRandomLevel function
 
-  const getCurrentState = () => {
-    if (!gameState) return null;
-    if (!solution || solution.length === 0 || currentStep === 0) return gameState;
-    
-    try {
-      let state = gameState;
-      for (let i = 0; i < currentStep && i < solution.length; i++) {
-        state = applyMove(state, solution[i]);
-      }
-      return state;
-    } catch (error) {
-      console.error('Error in getCurrentState:', error);
-      return gameState;
+// Update loadRandomLevel to show level number
+
+  const loadRandomLevel = async (difficulty) => {
+    if (apiStatus !== 'connected') {
+      setStats({ error: 'API server is not running. Please start the Flask server.' });
+      return;
     }
+
+    setSolving(true);
+
+    try {
+      const response = await fetch(`${API_URL}/levels/${difficulty}`);
+      const result = await response.json();
+
+      if (result.success) {
+        setCurrentDifficulty(difficulty);
+        initializeGame(result.level);
+        
+        setStats({ 
+          info: `Loaded ${difficulty} level ${result.levelIndex}/${result.totalLevels}` 
+        });
+      } else {
+        setStats({ error: result.error || 'Failed to load level' });
+      }
+    } catch (error) {
+      setStats({ error: `API Error: ${error.message}. Make sure Flask server is running.` });
+    }
+
+    setSolving(false);
   };
 
+  // Apply move to state
   const applyMove = (state, move) => {
-    // Deep clone the state properly
-    const newState = {
-      player: { x: state.player.x, y: state.player.y },
-      boxes: state.boxes.map(b => ({ x: b.x, y: b.y, id: b.id })),
-      goals: state.goals.map(g => ({ x: g.x, y: g.y })),
-      walls: state.walls, // Keep reference to the same Set
-      width: state.width,
-      height: state.height,
-      map: state.map
-    };
-    
+    const newState = JSON.parse(JSON.stringify(state));
     const { x, y } = newState.player;
-    const dirs = { U: [0, -1], D: [0, 1], L: [-1, 0], R: [1, 0] };
-    const [dx, dy] = dirs[move];
+    
+    const moves = {
+      'U': { dx: 0, dy: -1 },
+      'D': { dx: 0, dy: 1 },
+      'L': { dx: -1, dy: 0 },
+      'R': { dx: 1, dy: 0 }
+    };
+
+    const { dx, dy } = moves[move];
     const newX = x + dx;
     const newY = y + dy;
-    
-    newState.player = { x: newX, y: newY };
-    
+
+    // Check if pushing a box
     const boxIndex = newState.boxes.findIndex(b => b.x === newX && b.y === newY);
     if (boxIndex !== -1) {
-      newState.boxes[boxIndex] = { 
-        x: newX + dx, 
-        y: newY + dy, 
-        id: newState.boxes[boxIndex].id 
-      };
+      newState.boxes[boxIndex] = { x: newX + dx, y: newY + dy };
     }
-    
+
+    newState.player = { x: newX, y: newY };
     return newState;
   };
 
+  // Get current state
+  const getCurrentState = () => {
+    if (!gameState || currentStep >= gameState.length) {
+      return gameState?.[gameState.length - 1];
+    }
+    return gameState[currentStep];
+  };
+
+  // Check if goal reached
   const isGoal = (state) => {
     if (!state) return false;
     return state.boxes.every(box => 
@@ -185,15 +169,19 @@ const SokobanFrontend = () => {
     );
   };
 
+  // Solve with API
   const solveWithAPI = async () => {
     if (apiStatus !== 'connected') {
       setStats({ error: 'API server is not running. Please start the Flask server.' });
       return;
     }
 
+    if (!currentLevelMap) {
+      setStats({ error: 'No level loaded. Please select a difficulty first.' });
+      return;
+    }
+
     setSolving(true);
-    setIsPlaying(false);
-    setCurrentStep(0);
     setStats(null);
 
     try {
@@ -203,7 +191,7 @@ const SokobanFrontend = () => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          map: gameState.map,
+          map: currentLevelMap,
           algorithm: algorithm
         })
       });
@@ -212,298 +200,381 @@ const SokobanFrontend = () => {
 
       if (result.success) {
         setSolution(result.path);
+        setCurrentStep(0);
+        
+        // Build game states from solution
+        const states = [gameState[0]];
+        let currentState = gameState[0];
+        
+        for (const move of result.path) {
+          currentState = applyMove(currentState, move);
+          states.push(currentState);
+        }
+        
+        setGameState(states);
         setStats({
+          algorithm: result.algorithm,
           moves: result.path.length,
           nodesExplored: result.nodes_explored,
-          time: (result.time * 1000).toFixed(2),
-          algorithm: result.algorithm
+          time: (result.time * 1000).toFixed(2)
         });
       } else {
-        setSolution(null);
         setStats({ error: result.error || 'Failed to solve puzzle' });
       }
     } catch (error) {
-      setSolution(null);
       setStats({ error: `API Error: ${error.message}. Make sure Flask server is running.` });
     }
 
     setSolving(false);
   };
 
-  const renderCell = (x, y, state) => {
-    if (!state) return <div className="game-cell cell-floor"></div>;
-    
-    const pos = `${x},${y}`;
-    const isWall = state.walls.has(pos);
-    const isPlayer = state.player.x === x && state.player.y === y;
-    const box = state.boxes.find(b => b.x === x && b.y === y);
-    const isGoalPos = state.goals.some(g => g.x === x && g.y === y);
-    
-    let cellClass = "game-cell";
-    let content = '';
-    
-    if (isWall) {
-      cellClass += " cell-wall";
-    } else if (isPlayer) {
-      cellClass += isGoalPos ? " cell-player-on-goal" : " cell-player";
-      content = "🤖";
-    } else if (box) {
-      cellClass += isGoalPos ? " cell-box-on-goal" : " cell-box";
-      content = "📦";
-    } else if (isGoalPos) {
-      cellClass += " cell-goal";
-      content = "🎯";
-    } else {
-      cellClass += " cell-floor";
-    }
-    
-    return <div key={`${x}-${y}`} className={cellClass}>{content}</div>;
-  };
+  // Render game board
+  const renderGameBoard = () => {
+    const state = getCurrentState();
+    if (!state) return null;
 
-  const state = getCurrentState();
-
-  if (!gameState) {
-    return (
-      <div className="app-container" style={{display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh'}}>
-        <div style={{fontSize: '1.5rem', color: '#6b7280'}}>Loading game...</div>
-      </div>
+    // Create a 2D grid representation
+    const grid = Array(state.height).fill(null).map(() => 
+      Array(state.width).fill(' ')
     );
-  }
+
+    // Place walls
+    state.walls.forEach(wallPos => {
+      const [x, y] = wallPos.split(',').map(Number);
+      if (y < state.height && x < state.width) {
+        grid[y][x] = '#';
+      }
+    });
+
+    // Place goals
+    state.goals.forEach(goal => {
+      if (grid[goal.y][goal.x] === ' ') {
+        grid[goal.y][goal.x] = '.';
+      }
+    });
+
+    // Place boxes
+    state.boxes.forEach(box => {
+      const isOnGoal = state.goals.some(g => g.x === box.x && g.y === box.y);
+      grid[box.y][box.x] = isOnGoal ? '*' : '$';
+    });
+
+    // Place player
+    const isPlayerOnGoal = state.goals.some(g => 
+      g.x === state.player.x && g.y === state.player.y
+    );
+    grid[state.player.y][state.player.x] = isPlayerOnGoal ? '+' : '@';
+
+    return grid;
+  };
 
   return (
     <div className="app-container">
-      <div style={{maxWidth: '1200px', margin: '0 auto'}}>
-        {/* Header */}
-        <div className="text-center mb-8">
-          <h1 style={{fontSize: '3rem', fontWeight: 'bold', color: '#1f2937', marginBottom: '0.5rem'}}>
-            🎮 Sokoban AI Solver
-          </h1>
-          <p style={{color: '#6b7280', fontSize: '1.125rem'}}>Python Backend + React Frontend</p>
-          
-          {/* API Status */}
-          <div className={`api-status api-status-${apiStatus}`}>
-            <Server size={16} />
-            {apiStatus === 'connected' && <span>✓ API Connected</span>}
-            {apiStatus === 'disconnected' && <span>✗ API Disconnected - Start Flask server</span>}
-            {apiStatus === 'checking' && <span>Checking API...</span>}
+      <div style={{
+        maxWidth: '1400px',
+        margin: '0 auto',
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(350px, 1fr))',
+        gap: '2rem'
+      }}>
+        {/* Header Card */}
+        <div className="card" style={{gridColumn: '1 / -1'}}>
+          <div style={{textAlign: 'center'}}>
+            <h1 className="text-5xl font-bold mb-2" style={{
+              background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent',
+              marginBottom: '0.5rem'
+            }}>
+              🎮 Sokoban AI Solver
+            </h1>
+            <p className="text-gray-600">
+              Watch intelligent algorithms solve warehouse puzzles in real-time
+            </p>
           </div>
         </div>
 
-        {/* Main Grid */}
-        <div style={{display: 'grid', gridTemplateColumns: '1fr', gap: '1.5rem'}}>
-          <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1.5rem'}}>
-            
-            {/* Game Board Section */}
-            <div className="card" style={{gridColumn: 'span 2'}}>
-              <div className="mb-4" style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
-                <h2 className="text-2xl font-bold">Level: {levels[currentLevel].name}</h2>
-                {isGoal(state) && (
-                  <div className="success-message">🎉 Solved!</div>
-                )}
+        {/* Game Board Card */}
+        <div className="card" style={{gridColumn: '1 / -1'}}>
+          <h3 className="text-xl font-bold mb-4 text-center">
+            Game Board - {currentDifficulty.toUpperCase()}
+          </h3>
+          <div style={{
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            minHeight: '400px'
+          }}>
+            {renderGameBoard() ? (
+              <div className="game-board">
+                {renderGameBoard().map((row, y) => (
+                  <div key={y} className="game-row">
+                    {row.map((cell, x) => {
+                      let cellClass = 'game-cell ';
+                      switch(cell) {
+                        case '#': cellClass += 'cell-wall'; break;
+                        case '@': cellClass += 'cell-player'; break;
+                        case '+': cellClass += 'cell-player-on-goal'; break;
+                        case '$': cellClass += 'cell-box'; break;
+                        case '*': cellClass += 'cell-box-on-goal'; break;
+                        case '.': cellClass += 'cell-goal'; break;
+                        default: cellClass += 'cell-floor';
+                      }
+                      
+                      return (
+                        <div key={x} className={cellClass}>
+                          {cell === '@' && '🚶'}
+                          {cell === '+' && '🚶'}
+                          {cell === '$' && '📦'}
+                          {cell === '*' && '✅'}
+                        </div>
+                      );
+                    })}
+                  </div>
+                ))}
               </div>
-              
-              {/* Game Board */}
-              <div className="mb-6" style={{display: 'flex', justifyContent: 'center'}}>
-                <div className="game-board">
-                  {Array.from({ length: state.height }).map((_, y) => (
-                    <div key={y} className="game-row">
-                      {Array.from({ length: state.width }).map((_, x) => renderCell(x, y, state))}
-                    </div>
-                  ))}
-                </div>
+            ) : (
+              <div style={{textAlign: 'center', color: '#6b7280'}}>
+                <p>Loading game...</p>
+                <p style={{fontSize: '0.875rem', marginTop: '0.5rem'}}>
+                  Click a difficulty button below to start
+                </p>
               </div>
+            )}
+          </div>
 
-              {/* Control Buttons */}
-              <div style={{display: 'flex', flexWrap: 'wrap', gap: '0.75rem', justifyContent: 'center'}}>
-                <button
-                  onClick={solveWithAPI}
-                  disabled={solving || apiStatus !== 'connected'}
-                  className="btn btn-primary"
-                >
+          {/* Win Message */}
+          {getCurrentState() && isGoal(getCurrentState()) && (
+            <div style={{
+              textAlign: 'center',
+              marginTop: '1rem',
+              padding: '1rem',
+              backgroundColor: '#d1fae5',
+              borderRadius: '0.5rem'
+            }}>
+              <p className="success-message">
+                🎉 Puzzle Solved! All boxes on goals! 🎉
+              </p>
+            </div>
+          )}
+        </div>
+
+        {/* Controls Card */}
+        <div className="card">
+          <h3 className="text-xl font-bold mb-4" style={{display: 'flex', alignItems: 'center', gap: '0.5rem'}}>
+            <Play size={24} />
+            Controls
+          </h3>
+          <div style={{display: 'flex', flexDirection: 'column', gap: '0.75rem'}}>
+            <button 
+              onClick={solveWithAPI} 
+              disabled={solving || apiStatus !== 'connected' || !currentLevelMap}
+              className="btn btn-primary"
+            >
+              {solving ? (
+                <>
+                  <div className="loading-spinner"></div>
+                  Solving...
+                </>
+              ) : (
+                <>
                   <Zap size={20} />
-                  {solving ? "Solving..." : "Solve with Python AI"}
+                  Solve with AI
+                </>
+              )}
+            </button>
+
+            {solution && solution.length > 0 && (
+              <>
+                <button 
+                  onClick={() => setIsPlaying(!isPlaying)}
+                  className="btn btn-success"
+                >
+                  {isPlaying ? (
+                    <>
+                      <Pause size={20} />
+                      Pause Animation
+                    </>
+                  ) : (
+                    <>
+                      <Play size={20} />
+                      Play Solution
+                    </>
+                  )}
                 </button>
-                
-                {solution && (
-                  <>
-                    <button
-                      onClick={() => setIsPlaying(!isPlaying)}
-                      className="btn btn-success"
-                    >
-                      {isPlaying ? <Pause size={20} /> : <Play size={20} />}
-                      {isPlaying ? "Pause" : "Play"}
-                    </button>
-                    
-                    <button
-                      onClick={() => setCurrentStep(0)}
-                      className="btn btn-warning"
-                    >
-                      <RotateCcw size={20} />
-                      Reset
-                    </button>
-                    
-                    <button
-                      onClick={() => setCurrentStep(solution.length)}
-                      className="btn btn-secondary"
-                    >
-                      <SkipForward size={20} />
-                      End
-                    </button>
-                  </>
-                )}
-              </div>
-            </div>
 
-            {/* Algorithm Selection */}
-            <div className="card">
-              <h3 className="text-xl font-bold mb-4" style={{display: 'flex', alignItems: 'center', gap: '0.5rem'}}>
-                <Brain size={24} />
-                Algorithm
-              </h3>
-              <div className="radio-group">
-                {[
-                  { value: 'astar', label: 'A* (Best)', desc: 'Optimal & Fast' },
-                  { value: 'bfs', label: 'BFS', desc: 'Guarantees shortest' },
-                  { value: 'dfs', label: 'DFS', desc: 'Memory efficient' }
-                ].map(algo => (
-                  <label key={algo.value} className="radio-option">
-                    <input
-                      type="radio"
-                      value={algo.value}
-                      checked={algorithm === algo.value}
-                      onChange={(e) => setAlgorithm(e.target.value)}
-                    />
-                    <div className="radio-label">
-                      <span className="radio-title">{algo.label}</span>
-                      <span className="radio-description">{algo.desc}</span>
-                    </div>
-                  </label>
-                ))}
-              </div>
-            </div>
-
-            {/* Level Selection */}
-            <div className="card">
-              <h3 className="text-xl font-bold mb-4" style={{display: 'flex', alignItems: 'center', gap: '0.5rem'}}>
-                <Layers size={24} />
-                Levels
-              </h3>
-              <div className="level-grid">
-                {levels.map((level, idx) => (
-                  <button
-                    key={idx}
-                    onClick={() => setCurrentLevel(idx)}
-                    className={currentLevel === idx ? 'level-btn level-btn-active' : 'level-btn level-btn-inactive'}
-                  >
-                    {level.name}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Statistics */}
-            {stats && (
-              <div className="card">
-                <h3 className="text-xl font-bold mb-4">📊 Statistics</h3>
-                {stats.error ? (
-                  <p className="error-message">{stats.error}</p>
-                ) : (
-                  <div className="stats-grid">
-                    <div className="stat-row">
-                      <span className="stat-label">Algorithm:</span>
-                      <span className="stat-value">{stats.algorithm}</span>
-                    </div>
-                    <div className="stat-row">
-                      <span className="stat-label">Solution Length:</span>
-                      <span className="stat-value">{stats.moves} moves</span>
-                    </div>
-                    <div className="stat-row">
-                      <span className="stat-label">Nodes Explored:</span>
-                      <span className="stat-value">{stats.nodesExplored}</span>
-                    </div>
-                    <div className="stat-row">
-                      <span className="stat-label">Time:</span>
-                      <span className="stat-value">{stats.time}ms</span>
-                    </div>
-                  </div>
-                )}
-              </div>
+                <button 
+                  onClick={() => setCurrentStep(prev => Math.min(prev + 1, solution.length))}
+                  disabled={currentStep >= solution.length}
+                  className="btn btn-secondary"
+                >
+                  <SkipForward size={20} />
+                  Next Step
+                </button>
+              </>
             )}
 
-            {/* Solution Progress */}
-            {solution && (
-              <div className="card">
-                <h3 className="text-xl font-bold mb-4">Solution Progress</h3>
-                <div className="progress-container">
-                  <div className="progress-info">
-                    <span>Step {currentStep} / {solution.length}</span>
-                  </div>
-                  <div className="progress-bar">
-                    <div
-                      className="progress-fill"
-                      style={{ width: `${(currentStep / solution.length) * 100}%` }}
-                    />
+            <button 
+              onClick={() => loadRandomLevel(currentDifficulty)}
+              className="btn btn-warning"
+              disabled={apiStatus !== 'connected'}
+            >
+              <RotateCcw size={20} />
+              New Level (Same Difficulty)
+            </button>
+          </div>
+
+          {/* Progress Bar */}
+          {solution && solution.length > 0 && (
+            <div className="progress-container">
+              <div className="progress-info">
+                <span>Progress</span>
+                <span>{currentStep} / {solution.length}</span>
+              </div>
+              <div className="progress-bar">
+                <div 
+                  className="progress-fill"
+                  style={{width: `${(currentStep / solution.length) * 100}%`}}
+                ></div>
+              </div>
+              {solution && (
+                <div className="move-sequence">
+                  <div className="move-sequence-label">Solution Path:</div>
+                  <div className="move-sequence-text">
+                    {solution.map((move, i) => (
+                      <span 
+                        key={i}
+                        className={i < currentStep ? 'move-current' : ''}
+                      >
+                        {move}
+                      </span>
+                    )).reduce((prev, curr) => [prev, ' → ', curr])}
                   </div>
                 </div>
-                {currentStep > 0 && (
-                  <div className="move-sequence">
-                    <div className="move-sequence-label">Move sequence:</div>
-                    <div className="move-sequence-text">
-                      {solution.slice(Math.max(0, currentStep - 10), currentStep).join(' → ')}
-                      {currentStep < solution.length && (
-                        <span className="move-current"> → {solution[currentStep]}</span>
-                      )}
-                    </div>
-                  </div>
-                )}
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Algorithm Selection Card */}
+        <div className="card">
+          <h3 className="text-xl font-bold mb-4" style={{display: 'flex', alignItems: 'center', gap: '0.5rem'}}>
+            <Brain size={24} />
+            Algorithm
+          </h3>
+          <div className="radio-group">
+            {[
+              {value: 'astar', label: 'A* Search', desc: 'Optimal & Fast (Recommended)'},
+              {value: 'bfs', label: 'BFS', desc: 'Guarantees shortest path'},
+              {value: 'dfs', label: 'DFS', desc: 'Memory efficient'}
+            ].map(({value, label, desc}) => (
+              <label key={value} className="radio-option">
+                <input
+                  type="radio"
+                  value={value}
+                  checked={algorithm === value}
+                  onChange={(e) => setAlgorithm(e.target.value)}
+                />
+                <div className="radio-label">
+                  <span className="radio-title">{label}</span>
+                  <span className="radio-description">{desc}</span>
+                </div>
+              </label>
+            ))}
+          </div>
+        </div>
+
+        {/* Level Selection Card */}
+        <div className="card">
+          <h3 className="text-xl font-bold mb-4" style={{display: 'flex', alignItems: 'center', gap: '0.5rem'}}>
+            <Layers size={24} />
+            Random Levels
+          </h3>
+          
+          <div className="mb-2">
+            <p style={{fontSize: '0.875rem', color: '#6b7280', marginBottom: '0.75rem'}}>
+              🎲 Each click loads a different puzzle from the category
+            </p>
+          </div>
+
+          <div className="level-grid">
+            {[
+              { name: 'Tutorial', id: 'tutorial', emoji: '🎓', count: 4 },
+              { name: 'Easy', id: 'easy', emoji: '🟢', count: 4 },
+              { name: 'Medium', id: 'medium', emoji: '🟡', count: 4 },
+              { name: 'Hard', id: 'hard', emoji: '🔴', count: 4 }
+            ].map((level) => (
+              <button
+                key={level.id}
+                onClick={() => loadRandomLevel(level.id)}
+                disabled={solving || apiStatus !== 'connected'}
+                className={`level-btn ${currentDifficulty === level.id ? 'level-btn-active' : 'level-btn-random'}`}
+              >
+                <div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.25rem'}}>
+                  <span style={{fontSize: '1.5rem'}}>{level.emoji}</span>
+                  <span style={{fontWeight: '600'}}>{level.name}</span>
+                  <span style={{fontSize: '0.75rem', opacity: 0.8}}>{level.count} levels</span>
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* API Status Card */}
+        <div className="card">
+          <h3 className="text-xl font-bold mb-4" style={{display: 'flex', alignItems: 'center', gap: '0.5rem'}}>
+            <Server size={24} />
+            API Status
+          </h3>
+          <div className={`api-status api-status-${apiStatus}`}>
+            <div style={{
+              width: '8px',
+              height: '8px',
+              borderRadius: '50%',
+              backgroundColor: apiStatus === 'connected' ? '#10b981' : 
+                             apiStatus === 'disconnected' ? '#ef4444' : '#6b7280'
+            }}></div>
+            <span style={{textTransform: 'capitalize'}}>{apiStatus}</span>
+          </div>
+          {apiStatus === 'disconnected' && (
+            <div className="error-message" style={{marginTop: '1rem'}}>
+              ⚠️ Flask server not running. Start it with: <code>python app.py</code>
+            </div>
+          )}
+        </div>
+
+        {/* Statistics Card */}
+        {stats && (
+          <div className="card" style={{gridColumn: '1 / -1'}}>
+            <h3 className="text-xl font-bold mb-4">📊 Statistics</h3>
+            {stats.error ? (
+              <p className="error-message">{stats.error}</p>
+            ) : stats.info ? (
+              <p style={{color: '#059669', fontWeight: '500', textAlign: 'center', fontSize: '1.25rem'}}>
+                ✓ {stats.info}
+              </p>
+            ) : (
+              <div className="stats-grid">
+                <div className="stat-row">
+                  <span className="stat-label">Algorithm:</span>
+                  <span className="stat-value">{stats.algorithm}</span>
+                </div>
+                <div className="stat-row">
+                  <span className="stat-label">Solution Length:</span>
+                  <span className="stat-value">{stats.moves} moves</span>
+                </div>
+                <div className="stat-row">
+                  <span className="stat-label">Nodes Explored:</span>
+                  <span className="stat-value">{stats.nodesExplored}</span>
+                </div>
+                <div className="stat-row">
+                  <span className="stat-label">Time:</span>
+                  <span className="stat-value">{stats.time}ms</span>
+                </div>
               </div>
             )}
           </div>
-        </div>
-
-        {/* Legend */}
-        <div className="card mt-8">
-          <h3 className="text-xl font-bold mb-4">Legend</h3>
-          <div className="legend-grid">
-            <div className="legend-item">
-              <span className="legend-icon">🤖</span>
-              <span className="legend-text">Player</span>
-            </div>
-            <div className="legend-item">
-              <span className="legend-icon">📦</span>
-              <span className="legend-text">Box</span>
-            </div>
-            <div className="legend-item">
-              <span className="legend-icon">🎯</span>
-              <span className="legend-text">Goal</span>
-            </div>
-            <div className="legend-item">
-              <div className="legend-box" style={{backgroundColor: '#1f2937'}}></div>
-              <span className="legend-text">Wall</span>
-            </div>
-            <div className="legend-item">
-              <div className="legend-box" style={{backgroundColor: '#4ade80'}}></div>
-              <span className="legend-text">Box on Goal</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Setup Instructions */}
-        <div className="card mt-8">
-          <h3 className="text-xl font-bold mb-4">🔧 Setup Instructions</h3>
-          <div className="setup-grid">
-            <div className="setup-card">
-              <h4 className="setup-title">Backend (Python):</h4>
-              <pre className="setup-code">pip install flask flask-cors
-python app.py</pre>
-            </div>
-            <div className="setup-card">
-              <h4 className="setup-title">Frontend (React):</h4>
-              <pre className="setup-code">npm install lucide-react
-npm start</pre>
-            </div>
-          </div>
-        </div>
+        )}
       </div>
     </div>
   );
