@@ -185,7 +185,7 @@ def health():
 
 if __name__ == '__main__':
     print("\n" + "="*50)
-    print("🎮 Sokoban Solver API Server")
+    print("Sokoban Solver API Server")
     print("="*50)
     print("\nEndpoints:")
     print("  POST /api/solve       - Solve a puzzle")
